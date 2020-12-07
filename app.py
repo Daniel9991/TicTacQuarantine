@@ -5,6 +5,19 @@ must know the ip address and the listening port of the client server to connect 
 
 
 import tkinter as tk
+import tkinter.messagebox as msgbox
+import threading
+from queue import LifoQueue as Stack #put() and get()
+import time
+from pathlib import Path
+import os
+
+from player_model import PlayerModel
+from player_frame import PlayerFrame
+from player_controller import PlayerController
+from networking import Server, PlayerClient
+from screens import InitialScreen, InfoGatheringScreen, IpWindow
+from styles import FOREGROUND_BUTTON, BACKGROUND_BUTTON, BACKGROUND_SCREEN
 
 
 
@@ -15,95 +28,137 @@ class App(tk.Tk):
 
 		super().__init__()
 
+		self.configure_window()
+
+		self.screen_stack = Stack() #Here the window will save a reference and order of the screens that it has packed
+									#So that they can unpacked accordingly.
+		self.pack_help_frame() #This frame provides help and a button to go to the previous window
+		self.pack_initial_screen() #Calling method to setup the initial screen
+
+
+	def configure_window(self):
+		"""Defines some elements for the main window"""
+
 		self.title("TicTacStayOverThere")
-
-		self.pack_initial_frame() #Calling method to setup the initial screen
-
-
-	def pack_initial_frame(self):
-		"""Creates the initial frame where player has two buttons to decide whether to create or join a game.
-		A lambda funtion is used so that we can pass arguments into the called function or method."""
-
-		self.first_frame = tk.Frame(self)
-
-		#This button indicates that user will create a game and then join it
-		self.create_button = tk.Button(self.first_frame, text="Create game", command=lambda: self.pack_info_gathering_frame('create'))
-		self.create_button.pack()
-
-		#This button indicates that the player will join an existing game
-		self.join_button = tk.Button(self.first_frame, text="Join game", command=lambda: self.pack_info_gathering_frame('join'))
-		self.join_button.pack()
-
-		self.first_frame.pack()
+		self.configure(bg=BACKGROUND_SCREEN)
+		icon_path = Path(os.getcwd(), "res", "icon.png")
+		icon = tk.PhotoImage(file=icon_path)
+		self.iconphoto(False, icon)
+		self.bind_keys()
 
 
-	def pack_info_gathering_frame(self, mode):
-		"""In this screen player has the entry widgets to provide info such as name, ip_address, and port. Depending
-		on the mode, the prompt to enter the ip_address and the port will vary."""
+	def pack_help_frame(self):
+		"""Here the bottom frame of the app is packed. It contains a button to go back,
+		as well as stuff on how to connect and others."""
 
-		if mode == 'create': #Player chose to create a game
+		self.help_frame = tk.Frame(self, bg=BACKGROUND_SCREEN)
+		self.help_frame.pack(side=tk.BOTTOM)
 
-			ip_address_prompt = "Input your device ip address"
-			port_prompt = "Input the port to listen"
+		#This is a Toplevel window that will give users info on how to connect
+		self.how_to_connect_window = IpWindow(self)
+		self.focus()
 
-		elif mode == 'join': #Player chose to join a gama
+		my_credits = lambda: msgbox.showinfo("Credits", "Created by Daniel. 2020")
+		self.credits_button = tk.Button(self.help_frame, text="Credits", command=my_credits)
+		self.credits_button.configure(bg=BACKGROUND_BUTTON, fg=FOREGROUND_BUTTON)
+		self.credits_button.pack(side=tk.RIGHT, pady=(10,10), padx=(5,10))
 
-			ip_address_prompt = "Input the server's ip address"
-			port_prompt = "Input the server's listening port"
+		self.how_to_connect_button = tk.Button(self.help_frame, text="How to connect")
+		self.how_to_connect_button.configure(bg=BACKGROUND_BUTTON, fg=FOREGROUND_BUTTON, command=lambda: self.how_to_connect_window.deiconify())
+		self.how_to_connect_button.pack(side=tk.RIGHT, pady=(10,10), padx=(5,0))
 
+		self.back_button = tk.Button(self.help_frame, text="Go back", command=self.go_to_previous_screen)
+		self.back_button.configure(bg=BACKGROUND_BUTTON, fg=FOREGROUND_BUTTON, disabledforeground=FOREGROUND_BUTTON, state="disabled")
+		self.back_button.pack(side=tk.LEFT, pady=(10,10), padx=(10,0))
+
+
+	def pack_initial_screen(self):
+
+		self.first_screen = InitialScreen(self)
+		self.mount_screen(self.first_screen)
+
+
+	def pack_info_gathering_screen(self, mode):
+		
+		self.info_screen = InfoGatheringScreen(self, mode)
+		self.mount_screen(self.info_screen)
+		self.back_button.configure(state="normal")
+
+
+	def mount_screen(self, new_screen):
+		"""Packs new screen as the current screen and adds it to the screen stack."""
+
+		if type(new_screen) == InitialScreen:
+			new_screen.pack(fill=tk.X)
+			self.current_screen = new_screen
 		else:
-
-			print("What just happened?")
-
-		self.gather_info_frame = tk.Frame(self)
-
-		self.prompt_name_label = tk.Label(self.gather_info_frame, text="Input your name:")
-		self.prompt_name_label.pack()
-		self.name_entry = tk.Entry(self.gather_info_frame)
-		self.name_entry.pack()
-
-		self.prompt_ip_address_label = tk.Label(self.gather_info_frame, text=ip_address_prompt)
-		self.prompt_ip_address_label.pack()
-		self.ip_address_entry = tk.Entry(self.gather_info_frame)
-		self.ip_address_entry.pack()
-
-		self.prompt_port_label = tk.Label(self.gather_info_frame, text=port_prompt)
-		self.prompt_port_label.pack()
-		self.port_entry = tk.Entry(self.gather_info_frame)
-		self.port_entry.pack()
-
-		#Depending on what the user chose to do, the creating or joining method will be called.
-		command = self.create_game if mode == 'create' else self.join_game
-
-		self.done_button = tk.Button(self.gather_info_frame, text="Done", command=command)
-		self.done_button.pack()
-
-		self.first_frame.pack_forget()
-		self.gather_info_frame.pack()
+			self.current_screen.pack_forget()
+			self.screen_stack.put(self.current_screen)
+			self.current_screen = new_screen
+			self.current_screen.pack(fill=tk.X)
 
 
-	def create_game(self):
+	def go_to_previous_screen(self, send_closing=True):
+		"""Handles changing screens (from one to the previous)"""
+
+		if not self.screen_stack.empty():
+
+			if type(self.current_screen) == PlayerFrame: #Player is on the game screen a clicks on the back button.
+				if hasattr(self.player_controller, "player_client"):
+					if send_closing:
+						self.player_controller.player_client.send_message("CLOSING")
+					self.player_controller.player_client.client.close()
+				if hasattr(self, "server"):
+					self.server.client.close()
+
+			self.current_screen.pack_forget()
+			self.current_screen = self.screen_stack.get()
+			self.current_screen.pack()
+
+			if type(self.current_screen) == InitialScreen: #If user returns to the first screen, disable back button
+				self.back_button.configure(state="disabled")
+
+		else: #It will never enter here since the back button is disabled in when the first screen is active
+			pass
+
+
+	def create_game(self, name, ip_address, port, mode):
 		"""Player must create game, that is, a server client is created and it is set to listen for players in a new thread,
 		so that current flow can create player instance and connect to server."""
 
-		pass
+		try:
+			self.server = Server(ip_address, port)
+		except Exception as e:
+			msgbox.showerror("Error creating the server", f"The following error happened when creating the server.\n{e}")
+		else:
+			threading.Thread(target=self.server.accept_players).start()
+			self.join_game(name, ip_address, port, mode)
 
 
-	def join_game(self, name, ip_address, port):
+	def join_game(self, name, ip_address, port, mode):
 		"""Player connects to the server client, sends name over and creates the frame."""
 
-		pass
+		model = PlayerModel(name, ip_address, port, mode)
+		frame = PlayerFrame(self)
+		self.mount_screen(frame)
+		self.player_controller = PlayerController(model, frame)
 
 
-	def gather_info(self):
-		"""Gets info from entries in self.gathering_info_frame and returns it. Port is converted to int so that it can 
-		be used later. Might add some input validation, and make sure all entries are filled."""
+	def bind_keys(self):
+		"""Some key bindings for the window."""
 
-		name = self.name_entry.get()
-		ip_address = self.ip_address_entry.get()
-		port = int(self.port_entry.get())
+		self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-		return name, ip_address, port
+
+	def on_closing(self):
+		"""App resolves issues before closing the app."""
+
+		if hasattr(self, "player_controller"):
+			self.player_controller.player_client.client.close()
+		if hasattr(self, "server"):
+			self.server.client.close()
+		self.destroy()
+
 
 
 if __name__ == "__main__":
