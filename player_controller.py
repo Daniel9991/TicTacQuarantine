@@ -202,5 +202,5 @@ class PlayerController:
 	def received_CLOSING(self):
 		"""Called when received CLOSING message"""
 
-		self.player_frame.message_screen.write("Received CLOSING")
+		self.player_frame.notify_rival_closing()
 		self.player_frame.master.go_to_previous_screen(False)

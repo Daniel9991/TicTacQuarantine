@@ -152,6 +152,13 @@ class PlayerFrame(tk.Frame):
 		msgbox.showinfo(header, message)
 
 
+	def notify_rival_closing(self):
+		"""Method called when the rival player sends a CLOSING message to notify player."""
+
+		self.message_screen.write("Rival has left the game")
+		msgbox.showinfo("Last Man Standing", "Rival left the game")
+
+
 	def on_cell_pressed(self, cell):
 		"""Receives the instance of the cell that was pressed."""
 
