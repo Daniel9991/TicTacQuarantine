@@ -12,3 +12,5 @@ This Python app allows users to play TicTacToe against each other from different
 You can use it in devices that are connected to the same local network.
 If the network was created by one of the devices, the other device should
 be the one creating the game.
+
+App starts running in app.py
